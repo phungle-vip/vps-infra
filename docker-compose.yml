@@ -45,10 +45,10 @@ services:
       SPRING_CLOUD_VAULT_TOKEN: root
     volumes:
       # Mount KRaft configuration file
-      - ./central-server-config/kafka-config/kraft-config.properties:/tmp/kraft-config.properties:ro
+      - ./central-server-config/kafka/kraft-config.properties:/tmp/kraft-config.properties:ro
       # SSL certificates (used for all listeners)
-      - ./central-server-config/tls/kafka.broker.keystore.jks:/etc/kafka/secrets/kafka.broker.keystore.jks:ro
-      - ./central-server-config/tls/kafka.client.truststore.jks:/etc/kafka/secrets/kafka.client.truststore.jks:ro
+      - ./central-server-config/kafka/tls/kafka.broker.keystore.jks:/etc/kafka/secrets/kafka.broker.keystore.jks:ro
+      - ./central-server-config/kafka/tls/kafka.client.truststore.jks:/etc/kafka/secrets/kafka.client.truststore.jks:ro
       # CA certificates for remote Keycloak
       - /etc/ssl/certs:/etc/ssl/certs:ro
       # Persistent data
@@ -80,7 +80,7 @@ services:
       - JVM_OPTS=-Xms256M -Xmx512M
       - APP_F4_PASS=${APP_F4_PASS}
     volumes:
-      - ./central-server-config/tls:/etc/kafka/secrets:ro
+      - ./central-server-config/kafka/tls:/etc/kafka/secrets:ro
     depends_on:
       keycloak:
         condition: service_healthy
@@ -115,7 +115,7 @@ services:
     container_name: consul-config-loader
     restart: unless-stopped
     volumes:
-      - ./central-server-config/config:/config
+      - ./central-server-config/consul/KV:/config
       - ./central-server-config/consul/upload-consul-file-with-token.sh:/upload-consul-file.sh:ro
     environment:
       - INIT_SLEEP_SECONDS=5
@@ -133,7 +133,7 @@ services:
     image: redis:7.4.2
     restart: unless-stopped
     ports:
-      - "6379:6379" # localhost only
+      - "127.0.0.1:6379:6379" # localhost only
     command: redis-server --requirepass ${APP_F4_PASS}
     labels:
       autoheal: "true"
@@ -170,9 +170,9 @@ services:
       - "--hostname-admin=https://keycloak.${DOMAIN}"
       - "--hostname-strict=true"
     volumes:
-      - ./central-server-config/realm-config:/opt/keycloak/data/import
-      - ./central-server-config/realm-config/keycloak-health-check.sh:/opt/keycloak/health-check.sh
-      # - ./keycloak-custom-reg/lib:/opt/keycloak/providers
+      - ./central-server-config/keycloak/jhipster-realm.json:/opt/keycloak/data/import/jhipster-realm.json:ro
+      - ./central-server-config/keycloak/keycloak-health-check.sh:/opt/keycloak/health-check.sh
+      # - ./central-server-config/keycloak/keycloak-custom-reg/lib:/opt/keycloak/providers
     environment:
       - KC_DB=dev-file
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
@@ -196,34 +196,34 @@ services:
       autoheal: "true"
 
   nginx:
-    build: ./nginx/
+    image: nginx:alpine
     container_name: nginx
     restart: unless-stopped
     depends_on:
       keycloak:
         condition: service_healthy
     ports:
-      - "80:80"
-      - "443:443"
+      - "127.0.0.1:80:80" # localhost only; public traffic routes via cloudflared tunnel
     environment:
       - DOMAIN=${DOMAIN}
-      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
-      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
-      - CONSUL_HTTP_TOKEN=${APP_F4_PASS}
+      - NGINX_ENVSUBST_FILTER=DOMAIN
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./nginx/letsencrypt:/etc/letsencrypt
-      - ./nginx/www:/var/www/html
-      - ./nginx/log:/var/log/nginx
-      - ./lua/validate_token.lua:/etc/nginx/validate_token.lua
-      - ./lua:/etc/nginx/lua
-      - ./central-server-config/nginx-init.sh:/etc/nginx/nginx-init.sh:ro
-      - ./lua:/etc/nginx/lua
-      - ./central-server-config/default.conf.template:/etc/nginx/templates/default.conf.template:ro
-    command: [ "/bin/sh", "/etc/nginx/nginx-init.sh" ]
+      - ./central-server-config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./central-server-config/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/config.yml --no-autoupdate run
+    volumes:
+      - ./central-server-config/cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - nginx
+    labels:
+      autoheal: "true"
 
   vault:
     image: hashicorp/vault:latest
@@ -235,9 +235,10 @@ services:
       VAULT_DEV_ROOT_TOKEN_ID: ${APP_F4_PASS}
       VAULT_ADDR: http://0.0.0.0:8200
     volumes:
+      - vault_data:/vault/data
       - ./central-server-config:/central-server-config:ro
       - ./.env:/vault-secrets.env:ro
-      - ./vault/vault-startup.sh:/vault-startup.sh:ro
+      - ./central-server-config/vault/vault-startup.sh:/vault-startup.sh:ro
     command: [ "/bin/sh", "/vault-startup.sh" ]
   loki:
     image: grafana/loki:3.1.1
@@ -255,7 +256,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./observability/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - ./central-server-config/observability/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
     depends_on:
       - loki
 
@@ -284,28 +285,6 @@ services:
       # - AUTOHEAL_CONTAINER_LABEL=autoheal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-  # sms-gateway:
-  #   image: ghcr.io/android-sms-gateway/server:latest
-  #   container_name: sms-gateway
-  #   ports:
-  #     - "3002:3000"
-  #   volumes:
-  #     - ./sms-config/configsms.yml:/app/config.yml
-  #   restart: unless-stopped
-  #   depends_on:
-  #     sms-mysql:
-  #       condition: service_started
-  # sms-mysql:
-  #   image: mysql:9.2.0
-  #   volumes:
-  #     - ./config/mysql:/etc/mysql/conf.d
-  #   ports:
-  #     - "3306:3306"
-  #   environment:
-  #     MYSQL_DATABASE: sms
-  #     MYSQL_ROOT_PASSWORD: rootpassword
-  #     MYSQL_USER: smsuser
-  #     MYSQL_PASSWORD: smspassword
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     container_name: elasticsearch
@@ -315,7 +294,7 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     labels:
@@ -326,21 +305,6 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
-  # gkg:
-  #   build:
-  #     context: ./gkg
-  #   container_name: gkg
-  #   restart: unless-stopped
-  #   volumes:
-  #     - ../repositories:/repositories
-  #     - ./gkg/data:/data/gkg
-  #   expose:
-  #     - "27496"
-  #   healthcheck:
-  #     test: [ "CMD-SHELL", "curl -fsS http://localhost:27495/ >/dev/null || exit 1" ]
-  #     interval: 15s
-  #     timeout: 5s
-  #     retries: 20
 
 volumes:
   vault_data:

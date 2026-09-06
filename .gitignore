@@ -44,3 +44,13 @@ central-server-config/vault-secrets.env
 
 # Generated nginx configuration
 nginx/conf.d/default.conf
+
+# Cloudflare Tunnel credentials
+**/cloudflared/*.json
+!**/cloudflared/*.example
+
+# Kafka TLS certificates and keys
+**/kafka/tls/*.key
+**/kafka/tls/*.pem
+**/kafka/tls/*.jks
+**/kafka/tls/*.p12

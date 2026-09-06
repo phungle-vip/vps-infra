@@ -1,6 +1,3 @@
 [submodule "central-server-config"]
 	path = central-server-config
 	url = https://github.com/maian3333/central-server-config.git
-[submodule "keycloak-custom-reg"]
-	path = keycloak-custom-reg
-	url = https://github.com/maian3333/keycloak-custom-reg.git
