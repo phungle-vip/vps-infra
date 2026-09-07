@@ -38,11 +38,14 @@ Toàn bộ hạ tầng được đóng gói thành các container Docker và k�
 ```
 infra/vps-infra/
 ├── .env.example                               # File mẫu biến môi trường
-├── backup-vps.sh                              # Script sao lưu Docker volumes & code lên Google Drive
 ├── docker-compose.yml                         # File điều phối toàn bộ 15 services hạ tầng
 ├── README.md                                  # Tài liệu hướng dẫn sử dụng
 │
-└── central-server-config/                     # Submodule cấu hình runtime của hạ tầng
+└── central-server-config/                     # Toàn bộ cấu hình & scripts runtime của hạ tầng
+    ├── scripts/                               # Scripts quản trị & backup
+    │   ├── backup-vps.sh                      # Script sao lưu Docker volumes & code lên Google Drive
+    │   └── cli.txt                            # Hướng dẫn & lệnh thao tác hạ tầng
+    │
     ├── cloudflared/                           # Cấu hình Cloudflare Tunnel & Zero Trust
     │   ├── config.yml                         # Ingress rules trỏ domain về Nginx
     │   ├── credentials.json.example           # File mẫu credentials

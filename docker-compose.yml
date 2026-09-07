@@ -1,5 +1,8 @@
 networks:
+  default:
+    name: ridehub-network
   ridehub-network:
+    name: ridehub-network
     driver: bridge
 
 services:
@@ -101,6 +104,8 @@ services:
       consul agent -server -bootstrap-expect=1 -ui -client=0.0.0.0 -config-file=/consul/config/consul.hcl
     volumes:
       - ./central-server-config/consul/consul.hcl:/consul/config/consul.hcl
+      - ./central-server-config/consul/KV:/consul/KV
+      - ./central-server-config/consul/sync-kv-to-files.sh:/consul/scripts/sync-kv-to-files.sh:ro
     labels:
       autoheal: "true"
     healthcheck:
@@ -133,7 +138,7 @@ services:
     image: redis:7.4.2
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379" # localhost only
+      - "6379:6379"
     command: redis-server --requirepass ${APP_F4_PASS}
     labels:
       autoheal: "true"
@@ -294,7 +299,7 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
     ports:
-      - "127.0.0.1:9200:9200"
+      - "9200:9200"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     labels:
@@ -306,6 +311,29 @@ services:
       retries: 10
       start_period: 60s
 
+  socks5:
+    image: serjs/go-socks5-proxy:latest
+    container_name: socks5-proxy
+    restart: unless-stopped
+    environment:
+      - PROXY_USER=dev
+      - PROXY_PASSWORD=${APP_F4_PASS}
+    ports:
+      - "1080:1080"
+    labels:
+      autoheal: "true"
+
+  reposilite:
+    image: dzikoysk/reposilite:3.5.19
+    container_name: reposilite
+    restart: unless-stopped
+    environment:
+      - REPOSILITE_OPTS=--token admin:${APP_F4_PASS}
+    volumes:
+      - reposilite_data:/app/data
+    labels:
+      autoheal: "true"
+
 volumes:
   vault_data:
   kafka-oauth-data:
@@ -314,3 +342,4 @@ volumes:
   redisinsight_data:
   elasticsearch_data:
     driver: local
+  reposilite_data:
