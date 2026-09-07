@@ -4,9 +4,6 @@ networks:
   ridehub-network:
     name: ridehub-network
     driver: bridge
-  ridehub-ms-network:
-    name: ridehub-ms-network
-    external: true
 
 services:
   kafka:
@@ -103,9 +100,10 @@ services:
     image: hashicorp/consul:1.21.0
     container_name: consul
     restart: unless-stopped
-    networks:
-      - default
-      - ridehub-ms-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8500:8500"
     command: >
       consul agent -server -bootstrap-expect=1 -ui -client=0.0.0.0 -config-file=/consul/config/consul.hcl
     volumes:
