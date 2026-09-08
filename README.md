@@ -102,8 +102,8 @@ cp .env.example .env
 nano .env
 ```
 Các biến quan trọng cần chú ý:
-* `DOMAIN`: Tên miền của bạn (mặc định: `phungvip.io.vn`).
-* `APP_F4_PASS`: Mật khẩu tổng (dùng cho Redis, Consul, Grafana, Kafka SSL keystore).
+* `APP_F4_PASS`: Mật khẩu master cho các dịch vụ dữ liệu nội bộ (Redis, Grafana, Kafka SSL keystore).
+* **Consul & Vault Tokens**: Token quản trị cao nhất (Highest Role) được tự động sinh và lưu trữ độc lập trong `central-server-config/consul/consul-tokens.env` và `central-server-config/vault/vault-tokens.env` (không còn dùng chung `APP_F4_PASS`).
 * `KEYCLOAK_ADMIN` & `KEYCLOAK_ADMIN_PASSWORD`: Tài khoản quản trị Keycloak.
 * `CF_API_TOKEN`: Cloudflare API Token (quyền `Account -> Access: Apps and Policies -> Edit` và `Account -> Access: Organizations... -> Edit`).
 

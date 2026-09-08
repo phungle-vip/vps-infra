@@ -24,8 +24,13 @@ services:
         if [ ! -f /var/lib/kafka/data/meta.properties ]; then
           bin/kafka-storage.sh format -t $$CLUSTER_ID -c /tmp/kraft-config.properties
         fi
-        # Start Kafka
-        bin/kafka-server-start.sh /tmp/kraft-config.properties
+        # Start Kafka and initialize ACLs
+        bin/kafka-server-start.sh /tmp/kraft-config.properties &
+        KAFKA_PID=$$!
+        if [ -f /opt/kafka/scripts/init-kafka-acls.sh ]; then
+          /bin/bash /opt/kafka/scripts/init-kafka-acls.sh &
+        fi
+        wait $$KAFKA_PID
     ports:
       # - "127.0.0.1:9094:9092" # External SSL (moved from 9092) - localhost only
       # - "127.0.0.1:9093:9093" # OAuth SASL_SSL - localhost only
@@ -41,14 +46,19 @@ services:
       KAFKA_LOG4J_LOGGERS: "io.strimzi.kafka.oauth=DEBUG,org.apache.kafka.common.security.oauthbearer=DEBUG"
       # SSL passwords
       APP_F4_PASS: ${APP_F4_PASS}
+      S2S_CLIENT_ID: ${S2S_CLIENT_ID}
+      S2S_CLIENT_SECRET: ${S2S_CLIENT_SECRET}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
       # Vault integration
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: root
       SPRING_CLOUD_VAULT_URI: http://vault:8200
       SPRING_CLOUD_VAULT_TOKEN: root
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       # Mount KRaft configuration file
       - ./central-server-config/kafka/kraft-config.properties:/tmp/kraft-config.properties:ro
+      - ./central-server-config/kafka/init-kafka-acls.sh:/opt/kafka/scripts/init-kafka-acls.sh:ro
       # SSL certificates (used for all listeners)
       - ./central-server-config/kafka/tls/kafka.broker.keystore.jks:/etc/kafka/secrets/kafka.broker.keystore.jks:ro
       - ./central-server-config/kafka/tls/kafka.client.truststore.jks:/etc/kafka/secrets/kafka.client.truststore.jks:ro
@@ -79,10 +89,12 @@ services:
     # ports:
     #   - "8080:8080"
     environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:19092
-      - JVM_OPTS=-Xms256M -Xmx512M
+      - JVM_OPTS=-Xms256M -Xmx512M -Duser.timezone=Asia/Ho_Chi_Minh
       - APP_F4_PASS=${APP_F4_PASS}
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/kafka/tls:/etc/kafka/secrets:ro
     depends_on:
       keycloak:
@@ -104,9 +116,16 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "8500:8500"
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    env_file:
+      - ./central-server-config/consul/consul-tokens.env
     command: >
-      consul agent -server -bootstrap-expect=1 -ui -client=0.0.0.0 -config-file=/consul/config/consul.hcl
+      consul agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
+      -config-file=/consul/config/consul.hcl
+      -hcl='acl { tokens { initial_management = "${CONSUL_MASTER_TOKEN}" agent = "${CONSUL_MASTER_TOKEN}" } }'
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/consul/consul.hcl:/consul/config/consul.hcl
       - ./central-server-config/consul/KV:/consul/KV
       - ./central-server-config/consul/sync-kv-to-files.sh:/consul/scripts/sync-kv-to-files.sh:ro
@@ -124,14 +143,18 @@ services:
     container_name: consul-config-loader
     restart: unless-stopped
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/consul/KV:/config
       - ./central-server-config/consul/upload-consul-file-with-token.sh:/upload-consul-file.sh:ro
+    env_file:
+      - ./central-server-config/consul/consul-tokens.env
     environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - INIT_SLEEP_SECONDS=5
       - CONSUL_URL=consul
       - CONSUL_PORT=8500
-      # ACL token from consul.hcl initial_management token
-      - CONSUL_HTTP_TOKEN=f4security
+      # ACL token from consul-tokens.env (config-deployer role or master token)
+      - CONSUL_HTTP_TOKEN=${CONSUL_TOKEN_CONFIG_DEPLOYER:-${CONSUL_MASTER_TOKEN}}
     depends_on:
       consul:
         condition: service_healthy
@@ -143,6 +166,10 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     command: redis-server --requirepass ${APP_F4_PASS}
     labels:
       autoheal: "true"
@@ -158,12 +185,15 @@ services:
     container_name: redisinsight
     restart: unless-stopped
     environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - RI_ACCEPT_TERMS_AND_CONDITIONS=true
       - RI_REDIS_HOST=redis
       - RI_REDIS_PORT=6379
       - RI_REDIS_ALIAS=RideHub-Redis
       - RI_REDIS_USERNAME=default
       - RI_REDIS_PASSWORD=${APP_F4_PASS}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -179,10 +209,12 @@ services:
       - "--hostname-admin=https://keycloak.${DOMAIN}"
       - "--hostname-strict=true"
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/keycloak/jhipster-realm.json:/opt/keycloak/data/import/jhipster-realm.json:ro
       - ./central-server-config/keycloak/keycloak-health-check.sh:/opt/keycloak/health-check.sh
       # - ./central-server-config/keycloak/keycloak-custom-reg/lib:/opt/keycloak/providers
     environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - KC_DB=dev-file
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
@@ -214,9 +246,11 @@ services:
     ports:
       - "127.0.0.1:80:80" # localhost only; public traffic routes via cloudflared tunnel
     environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - DOMAIN=${DOMAIN}
       - NGINX_ENVSUBST_FILTER=DOMAIN
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./central-server-config/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
     extra_hosts:
@@ -226,8 +260,11 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
     command: tunnel --config /etc/cloudflared/config.yml --no-autoupdate run
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/cloudflared:/etc/cloudflared:ro
     depends_on:
       - nginx
@@ -241,11 +278,13 @@ services:
     # ports:
     #   - "8200:8200"
     environment:
-      VAULT_DEV_ROOT_TOKEN_ID: ${APP_F4_PASS}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
       VAULT_ADDR: http://0.0.0.0:8200
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - vault_data:/vault/data
       - ./central-server-config:/central-server-config:ro
+      - ./central-server-config/vault/vault-tokens.env:/vault-tokens.env:rw
       - ./.env:/vault-secrets.env:ro
       - ./central-server-config/vault/vault-startup.sh:/vault-startup.sh:ro
     command: [ "/bin/sh", "/vault-startup.sh" ]
@@ -253,58 +292,140 @@ services:
     image: grafana/loki:3.1.1
     container_name: loki
     restart: unless-stopped
-    # ports:
-    #   - "3100:3100"
+    user: "0"
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./central-server-config/observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/tmp/loki
+    ports:
+      - "3100:3100"
+    labels:
+      autoheal: "true"
+
 
   promtail:
     image: grafana/promtail:3.1.1
     container_name: promtail
     restart: unless-stopped
     user: "0" # chạy bằng root để đọc được docker.sock
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
     command: -config.file=/etc/promtail/promtail-config.yaml
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - ./central-server-config/observability/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
     depends_on:
       - loki
+    labels:
+      autoheal: "true"
+
+  prometheus:
+    image: prom/prometheus:v3.3.1
+    container_name: prometheus
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-remote-write-receiver"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./central-server-config/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    labels:
+      autoheal: "true"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    command:
+      - --disable_metrics=disk,diskIO
+      - --docker_only=true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /dev/disk/:/dev/disk:ro
+    labels:
+      autoheal: "true"
 
   grafana:
     image: grafana/grafana:11.2.0
     container_name: grafana
     restart: unless-stopped
-    # ports:
-    #   - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=Asia/Ho_Chi_Minh
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${APP_F4_PASS}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_PANELS_DISABLE_SANITIZE_HTML=true
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/definitions/ops-control.json
+      - GF_EXPLORE_ENABLED=false
+      - GF_ALERTING_ENABLED=false
+      - GF_UNIFIED_ALERTING_ENABLED=false
+      - GF_HELP_ENABLED=false
+      - GF_NEWS_NEWS_FEED_ENABLED=false
+      - GF_PLUGINS_PLUGIN_ADMIN_ENABLED=false
+
+    ports:
+      - "3000:3000"
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - grafana_data:/var/lib/grafana
+      - ./central-server-config/observability/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - loki
+      - prometheus
+    labels:
+      autoheal: "true"
+
   autoheal:
     image: willfarrell/autoheal:latest
     container_name: autoheal
     restart: unless-stopped
     environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - AUTOHEAL_INTERVAL=5
       - AUTOHEAL_START_PERIOD=0
       - AUTOHEAL_DEFAULT_STOP_TIMEOUT=10
       # Only heal containers with label autoheal=true (default behavior)
       # - AUTOHEAL_CONTAINER_LABEL=autoheal
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     container_name: elasticsearch
     restart: unless-stopped
     environment:
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m -Duser.timezone=Asia/Ho_Chi_Minh
       - discovery.type=single-node
       - xpack.security.enabled=false
     ports:
       - "9200:9200"
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - elasticsearch_data:/usr/share/elasticsearch/data
     labels:
       autoheal: "true"
@@ -320,8 +441,11 @@ services:
     container_name: socks5-proxy
     restart: unless-stopped
     environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - PROXY_USER=dev
       - PROXY_PASSWORD=${APP_F4_PASS}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     ports:
       - "1080:1080"
     labels:
@@ -332,8 +456,10 @@ services:
     container_name: reposilite
     restart: unless-stopped
     environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - REPOSILITE_OPTS=--token admin:${APP_F4_PASS}
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - reposilite_data:/app/data
     labels:
       autoheal: "true"
@@ -347,3 +473,6 @@ volumes:
   elasticsearch_data:
     driver: local
   reposilite_data:
+  loki_data:
+  prometheus_data:
+
