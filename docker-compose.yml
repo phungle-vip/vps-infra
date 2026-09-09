@@ -280,6 +280,8 @@ services:
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
       VAULT_ADDR: http://0.0.0.0:8200
+      APP_F4_PASS: ${APP_F4_PASS}
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:-${APP_F4_PASS}}
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - vault_data:/vault/data
