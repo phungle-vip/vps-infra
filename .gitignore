@@ -54,3 +54,7 @@ nginx/conf.d/default.conf
 **/kafka/tls/*.pem
 **/kafka/tls/*.jks
 **/kafka/tls/*.p12
+
+# Runtime SSH CA Public Key
+**/cloudflared/*.pub
+**/ssh-ca.pub
