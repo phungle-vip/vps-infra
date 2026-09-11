@@ -38,45 +38,49 @@ Toàn bộ hạ tầng được đóng gói thành các container Docker và k�
 ```
 infra/vps-infra/
 ├── .env.example                               # File mẫu biến môi trường
-├── docker-compose.yml                         # File điều phối toàn bộ 15 services hạ tầng
+├── docker-compose.yml                         # File điều phối toàn bộ các services hạ tầng & auto-init
 ├── README.md                                  # Tài liệu hướng dẫn sử dụng
 │
 └── central-server-config/                     # Toàn bộ cấu hình & scripts runtime của hạ tầng
     ├── scripts/                               # Scripts quản trị & backup
     │   ├── backup-vps.sh                      # Script sao lưu Docker volumes & code lên Google Drive
-    │   └── cli.txt                            # Hướng dẫn & lệnh thao tác hạ tầng
+    │   └── cli.txt                            # Lệnh CLI thao tác hạ tầng tóm tắt
     │
     ├── cloudflared/                           # Cấu hình Cloudflare Tunnel & Zero Trust
-    │   ├── config.yml                         # Ingress rules trỏ domain về Nginx
+    │   ├── config.yml.template                # Template ingress rules (tự động render ra config.yml)
     │   ├── credentials.json.example           # File mẫu credentials
-    │   └── setup-cloudflare-access.sh         # Script tự động tạo Access App & Keycloak OIDC
+    │   └── setup-cloudflare.sh                # Script duy nhất thiết lập Keycloak OIDC, Apps, SSH & WARP
     │
     ├── consul/                                # Cấu hình Consul Service Discovery & KV
     │   ├── consul.hcl                         # File cấu hình server & ACL token
     │   ├── KV/                                # Chứa file yaml config cho từng microservice
-    │   └── upload-consul-file-with-token.sh   # Script tự động đẩy KV lên Consul có ACL
+    │   ├── init-consul-acl.sh                 # (Tự động chạy) Khởi tạo ACL policies, roles và tokens
+    │   └── upload-consul-file-with-token.sh   # (Tự động chạy) Đẩy KV lên Consul có ACL
     │
     ├── kafka/                                 # Cấu hình Kafka KRaft
-    │   ├── kraft-config.properties            # Cấu hình cụm Kafka KRaft (thay thế ZooKeeper)
-    │   ├── generate-kafka-ssl.sh              # Script sinh CA, SSL certs và Keystore/Truststore JKS
-    │   └── tls/                               # Chứa certs và keystore đã sinh
+    │   ├── kraft-config.properties.template   # Template KRaft (tự động render khi start container)
+    │   ├── generate-kafka-ssl.sh              # (Tự động chạy) Tự sinh SSL certs & keystores nếu chưa có
+    │   ├── init-kafka-acls.sh                 # (Tự động chạy) Khởi tạo ACLs cho Microservices
+    │   └── tls/                               # Thư mục chứa SSL certificates và keystores
     │
     ├── keycloak/                              # Cấu hình Keycloak 26 (Quarkus)
-    │   ├── jhipster-realm.json                # Realm cấu hình sẵn các OIDC clients và roles
-    │   ├── keycloak-health-check.sh           # Script healthcheck cho Keycloak container
-    │   └── keycloak-custom-reg/               # (Submodule) Keycloak Custom Registration SPI plugin
+    │   ├── jhipster-realm.json.template       # Template Realm (tự động render khi start container)
+    │   ├── keycloak-entrypoint.sh             # (Tự động chạy) Entrypoint render realm & đồng bộ domain
+    │   └── keycloak-health-check.sh           # Script healthcheck cho Keycloak container
     │
     ├── nginx/                                 # Cấu hình Nginx Reverse Proxy
     │   ├── nginx.conf                         # Cấu hình lõi Nginx
-    │   └── default.conf.template              # Template định tuyến domain con -> containers
+    │   └── default.conf.template              # Template định tuyến domain con -> containers (tự sinh)
     │
     ├── observability/                         # Cụm giám sát & Logging
     │   ├── loki-config.yaml                   # Cấu hình lưu trữ log Loki
-    │   └── promtail-config.yaml               # Cấu hình thu thập log Promtail từ Docker socket
+    │   ├── prometheus.yml                     # Cấu hình Prometheus
+    │   ├── promtail-config.yaml               # Cấu hình thu thập log Promtail từ Docker socket
+    │   └── grafana/                           # Provisioning datasources và dashboards (tự khởi tạo)
     │
     └── vault/                                 # Cấu hình HashiCorp Vault
         ├── vault.hcl                          # File cấu hình Vault server
-        └── vault-startup.sh                   # Script khởi động và tự động seed secrets
+        └── vault-startup.sh                   # (Tự động chạy) Khởi động & tự động seed secrets từ .env
 ```
 
 ---
@@ -85,10 +89,11 @@ infra/vps-infra/
 
 * **Hệ điều hành:** Linux (khuyên dùng Ubuntu 22.04 LTS hoặc 24.04 LTS, Debian 12).
 * **Dung lượng ổ cứng:** Tối thiểu **30 GB** (khuyến nghị **50 GB - 100 GB** vì Kafka, Elasticsearch và Keycloak chiếm nhiều dung lượng lưu trữ).
-* **Phần mềm yêu cầu:**
+* **Phần mềm duy nhất cần cài trên host:**
   * Docker Engine (>= 24.0) & Docker Compose (v2).
-  * `cloudflared` CLI cài sẵn trên host VPS.
-  * Tên miền đã trỏ NameServer về **Cloudflare**.
+  * `cloudflared` CLI (nếu dùng Cloudflare Tunnel).
+  * `git`.
+  *(Không cần cài JDK, keytool, python hay các công cụ phức tạp trên host; toàn bộ đều tự động bên trong container).*
 
 ---
 
@@ -103,25 +108,23 @@ nano .env
 ```
 Các biến quan trọng cần chú ý:
 * `APP_F4_PASS`: Mật khẩu master cho các dịch vụ dữ liệu nội bộ (Redis, Grafana, Kafka SSL keystore).
-* **Consul & Vault Tokens**: Token quản trị cao nhất (Highest Role) được tự động sinh và lưu trữ độc lập trong `central-server-config/consul/consul-tokens.env` và `central-server-config/vault/vault-tokens.env` (không còn dùng chung `APP_F4_PASS`).
+* `DOMAIN`: Tên miền của bạn (ví dụ: `phungvip.io.vn`).
 * `KEYCLOAK_ADMIN` & `KEYCLOAK_ADMIN_PASSWORD`: Tài khoản quản trị Keycloak.
-* `CF_API_TOKEN`: Cloudflare API Token (quyền `Account -> Access: Apps and Policies -> Edit` và `Account -> Access: Organizations... -> Edit`).
+* `CF_API_TOKEN`: Cloudflare API Token (nếu muốn tự động cấu hình Zero Trust Access).
 
 ---
 
-### Bước 2: Thiết lập Cloudflare Tunnel
+### Bước 2: Thiết lập Cloudflare Tunnel (Chạy 1 lần trên Host)
 
 1. **Đăng nhập Cloudflare trên VPS:**
    ```bash
    cloudflared tunnel login
    ```
-   *(Trình duyệt sẽ mở để chọn tên miền của bạn).*
 
 2. **Tạo Tunnel mới:**
    ```bash
    cloudflared tunnel create ridehub-tunnel
    ```
-   Lệnh sẽ trả về **Tunnel ID (UUID)** và tạo file credentials tại `~/.cloudflared/<TUNNEL_ID>.json`.
 
 3. **Sao chép file credentials vào thư mục cấu hình:**
    ```bash
@@ -129,10 +132,7 @@ Các biến quan trọng cần chú ý:
    chmod 644 central-server-config/cloudflared/credentials.json
    ```
 
-4. **Cập nhật `config.yml`:**
-   Mở file `central-server-config/cloudflared/config.yml` và thay `YOUR_TUNNEL_ID` bằng UUID vừa tạo.
-
-5. **Định tuyến DNS trên Cloudflare về Tunnel:**
+4. **Định tuyến DNS trên Cloudflare về Tunnel:**
    ```bash
    cloudflared tunnel route dns -f ridehub-tunnel "*.phungvip.io.vn"
    cloudflared tunnel route dns -f ridehub-tunnel "phungvip.io.vn"
@@ -140,19 +140,19 @@ Các biến quan trọng cần chú ý:
 
 ---
 
-### Bước 3: (Tùy chọn) Sinh lại chứng chỉ SSL cho Kafka nội bộ
-Các chứng chỉ mặc định đã được sinh sẵn trong `central-server-config/kafka/tls/`. Nếu bạn đổi tên miền mới, chạy script sau để tạo lại:
-```bash
-bash central-server-config/kafka/generate-kafka-ssl.sh
-```
+### Bước 3: Khởi chạy toàn bộ hạ tầng (Zero-Touch Auto-Init)
 
----
-
-### Bước 4: Khởi chạy toàn bộ hạ tầng
-Chạy Docker Compose ở chế độ nền:
+Bạn **KHÔNG CẦN** chạy bất kỳ script sh nào để sinh chứng chỉ hay cấu hình. Chỉ cần chạy:
 ```bash
 docker compose up -d
 ```
+Docker Compose sẽ tự động thực hiện:
+* Container `infra-init` tự động render `cloudflared/config.yml`, copy dashboard Grafana và chuẩn bị token files.
+* Container `kafka` tự sinh SSL Certificates (`.jks`, `.pem`), format KRaft storage và thiết lập ACLs.
+* Container `consul` và `consul-config-loader` tự động tạo ACL Policies, Roles, Tokens và nạp file KV.
+* Container `vault` tự động nạp toàn bộ secrets từ `.env`.
+* Container `keycloak` tự động render realm từ template và khởi chạy OIDC.
+
 Kiểm tra trạng thái các container:
 ```bash
 docker compose ps
@@ -161,13 +161,13 @@ docker compose ps
 
 ---
 
-### Bước 5: Cấu hình bảo mật Cloudflare Zero Trust Access với Keycloak OIDC
+### Bước 4: (Tùy chọn) Cấu hình bảo mật Cloudflare Zero Trust Access với Keycloak OIDC
 
-Chạy script tự động cấu hình bảo vệ các trang quản trị:
+Nếu bạn muốn tự động liên kết Keycloak OIDC với Cloudflare Zero Trust để bảo vệ các trang quản trị và SSH:
 ```bash
-./central-server-config/cloudflared/setup-cloudflare-access.sh
+./central-server-config/cloudflared/setup-cloudflare.sh
 ```
-* **Chức năng:** Script sẽ tự động kết nối tới Cloudflare API, đăng ký Keycloak làm OIDC Identity Provider, và kích hoạt tính năng **Auto-redirect sang Keycloak Login** cho toàn bộ 5 dịch vụ quản trị nội bộ.
+*(Hỗ trợ cờ `--apps` chỉ cài Web UI, `--ssh` chỉ cài SSH & WARP, hoặc mặc định cài toàn bộ).*
 
 ---
 

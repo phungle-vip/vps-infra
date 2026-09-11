@@ -6,6 +6,40 @@ networks:
     driver: bridge
 
 services:
+  infra-init:
+    image: alpine:latest
+    container_name: infra-init
+    restart: "no"
+    user: "0"
+    environment:
+      DOMAIN: ${DOMAIN:-phungvip.io.vn}
+      APP_F4_PASS: ${APP_F4_PASS:-}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./central-server-config:/config:rw
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo ">> [infra-init] Tự động chuẩn bị cấu hình hạ tầng..."
+        # 1. Tự động sinh cloudflared/config.yml từ template nếu chưa có hoặc cập nhật domain
+        if [ -f /config/cloudflared/config.yml.template ]; then
+          sed -e "s|\$${DOMAIN}|$${DOMAIN:-phungvip.io.vn}|g" \
+              /config/cloudflared/config.yml.template > /config/cloudflared/config.yml
+          echo ">> [infra-init] ✓ Đã sinh cloudflared/config.yml"
+        fi
+        # 2. Tự động khởi tạo ops-control.json nếu chưa có
+        DASH_DIR="/config/observability/grafana/provisioning/dashboards/admin"
+        if [ -f "$$DASH_DIR/ops-control.json.example" ] && [ ! -f "$$DASH_DIR/ops-control.json" ]; then
+          cp "$$DASH_DIR/ops-control.json.example" "$$DASH_DIR/ops-control.json"
+          echo ">> [infra-init] ✓ Đã tạo ops-control.json"
+        fi
+        # 3. Đảm bảo các thư mục và file token cần thiết tồn tại
+        mkdir -p /config/kafka/tls
+        touch /config/consul/consul-tokens.env
+        touch /config/vault/vault-tokens.env
+        echo ">> [infra-init] ✓ Hoàn tất chuẩn bị cấu hình!"
+
   kafka:
     image: quay.io/strimzi/kafka:0.48.0-kafka-4.1.0
     container_name: kafka
@@ -26,6 +60,11 @@ services:
               -e "s|\$${S2S_CLIENT_ID}|$${S2S_CLIENT_ID}|g" \
               -e "s|\$${S2S_CLIENT_SECRET}|$${S2S_CLIENT_SECRET}|g" \
               /tmp/kraft-config.properties.template > /tmp/kraft-config.properties
+        fi
+        # Tự động sinh SSL Keystore & Truststore nếu chưa tồn tại
+        if [ ! -f /etc/kafka/secrets/kafka.broker.keystore.jks ]; then
+          echo ">> [kafka-ssl] Keystore chưa tồn tại. Đang tự động sinh Kafka SSL certificates..."
+          OUTPUT_DIR=/etc/kafka/secrets /bin/bash /opt/kafka/scripts/generate-kafka-ssl.sh
         fi
         # Format KRaft storage (only if not already formatted)
         export CLUSTER_ID=$${CLUSTER_ID:-kafka-cluster-01}
@@ -65,18 +104,19 @@ services:
       SPRING_CLOUD_VAULT_TOKEN: root
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      # Mount KRaft configuration file & template
+      # Mount KRaft configuration template & scripts
       - ./central-server-config/kafka/kraft-config.properties.template:/tmp/kraft-config.properties.template:ro
-      - ./central-server-config/kafka/kraft-config.properties:/tmp/kraft-config.properties
       - ./central-server-config/kafka/init-kafka-acls.sh:/opt/kafka/scripts/init-kafka-acls.sh:ro
-      # SSL certificates (used for all listeners)
-      - ./central-server-config/kafka/tls/kafka.broker.keystore.jks:/etc/kafka/secrets/kafka.broker.keystore.jks:ro
-      - ./central-server-config/kafka/tls/kafka.client.truststore.jks:/etc/kafka/secrets/kafka.client.truststore.jks:ro
+      - ./central-server-config/kafka/generate-kafka-ssl.sh:/opt/kafka/scripts/generate-kafka-ssl.sh:ro
+      # SSL certificates directory
+      - ./central-server-config/kafka/tls:/etc/kafka/secrets:rw
       # CA certificates for remote Keycloak
       - /etc/ssl/certs:/etc/ssl/certs:ro
       # Persistent data
       - kafka-oauth-data:/var/lib/kafka/data
     depends_on:
+      infra-init:
+        condition: service_completed_successfully
       vault:
         condition: service_started
       keycloak:
@@ -122,18 +162,20 @@ services:
     image: hashicorp/consul:1.21.0
     container_name: consul
     restart: unless-stopped
+    depends_on:
+      infra-init:
+        condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
     expose:
       - "8500"
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
-    env_file:
-      - ./central-server-config/consul/consul-tokens.env
+      CONSUL_MASTER_TOKEN: ${CONSUL_MASTER_TOKEN:-${APP_F4_PASS}}
     command: >
       consul agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
       -config-file=/consul/config/consul.hcl
-      -hcl='acl { tokens { initial_management = "${CONSUL_MASTER_TOKEN}" agent = "${CONSUL_MASTER_TOKEN}" } }'
+      -hcl='acl { tokens { initial_management = "${CONSUL_MASTER_TOKEN:-${APP_F4_PASS}}" agent = "${CONSUL_MASTER_TOKEN:-${APP_F4_PASS}}" } }'
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/consul/consul.hcl:/consul/config/consul.hcl
@@ -156,15 +198,32 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/consul/KV:/config
       - ./central-server-config/consul/upload-consul-file-with-token.sh:/upload-consul-file.sh:ro
-    env_file:
-      - ./central-server-config/consul/consul-tokens.env
+      - ./central-server-config/consul/init-consul-acl.sh:/init-consul-acl.sh:ro
+      - ./central-server-config/consul:/consul-config:rw
     environment:
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - INIT_SLEEP_SECONDS=5
       - CONSUL_URL=consul
       - CONSUL_PORT=8500
-      # ACL token from consul-tokens.env (config-deployer role or master token)
-      - CONSUL_HTTP_TOKEN=${CONSUL_TOKEN_CONFIG_DEPLOYER:-${CONSUL_MASTER_TOKEN}}
+      - CONSUL_MASTER_TOKEN=${CONSUL_MASTER_TOKEN:-${APP_F4_PASS}}
+      - APP_F4_PASS=${APP_F4_PASS}
+    command:
+      - /bin/bash
+      - -c
+      - |
+        export CONSUL_HTTP_ADDR="http://$$CONSUL_URL:$$CONSUL_PORT"
+        export CONSUL_MASTER_TOKEN="$${CONSUL_MASTER_TOKEN:-$${APP_F4_PASS}}"
+        export OUTPUT_TOKEN_FILE="/consul-config/consul-tokens.env"
+        export POLICIES_DIR="/consul-config/policies"
+        if [ -f /init-consul-acl.sh ]; then
+          echo ">> [consul-config-loader] Tự động khởi tạo Consul ACL Policies & Tokens..."
+          /bin/bash /init-consul-acl.sh || true
+        fi
+        if [ -f "$$OUTPUT_TOKEN_FILE" ]; then
+          set -a; source "$$OUTPUT_TOKEN_FILE" 2>/dev/null || true; set +a
+        fi
+        export CONSUL_HTTP_TOKEN="$${CONSUL_TOKEN_CONFIG_DEPLOYER:-$$CONSUL_MASTER_TOKEN}"
+        exec /load-config.sh
     depends_on:
       consul:
         condition: service_healthy
@@ -285,7 +344,10 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/cloudflared:/etc/cloudflared:ro
     depends_on:
-      - nginx
+      infra-init:
+        condition: service_completed_successfully
+      nginx:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
@@ -310,6 +372,9 @@ services:
       - ./.env:/vault-secrets.env:ro
       - ./central-server-config/vault/vault-startup.sh:/vault-startup.sh:ro
     command: [ "/bin/sh", "/vault-startup.sh" ]
+    depends_on:
+      infra-init:
+        condition: service_completed_successfully
   loki:
     image: grafana/loki:3.1.1
     container_name: loki
@@ -443,8 +508,12 @@ services:
       - grafana_data:/var/lib/grafana
       - ./central-server-config/observability/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
-      - loki
-      - prometheus
+      infra-init:
+        condition: service_completed_successfully
+      loki:
+        condition: service_started
+      prometheus:
+        condition: service_started
     labels:
       autoheal: "true"
 
