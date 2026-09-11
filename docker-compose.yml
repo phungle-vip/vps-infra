@@ -12,8 +12,13 @@ services:
     restart: "no"
     user: "0"
     environment:
-      DOMAIN: ${DOMAIN:-phungvip.io.vn}
+      DOMAIN: ${DOMAIN:-yourdomain.com}
       APP_F4_PASS: ${APP_F4_PASS:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      S2S_CLIENT_SECRET: ${S2S_CLIENT_SECRET:-}
+      REPOSILITE_TOKEN: ${REPOSILITE_TOKEN:-}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
+      CF_API_TOKEN: ${CF_API_TOKEN:-}
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./central-server-config:/config:rw
@@ -24,20 +29,25 @@ services:
         echo ">> [infra-init] Tự động chuẩn bị cấu hình hạ tầng..."
         # 1. Tự động sinh cloudflared/config.yml từ template nếu chưa có hoặc cập nhật domain
         if [ -f /config/cloudflared/config.yml.template ]; then
-          sed -e "s|\$${DOMAIN}|$${DOMAIN:-phungvip.io.vn}|g" \
+          sed -e "s|\${DOMAIN}|${DOMAIN:-yourdomain.com}|g" \
               /config/cloudflared/config.yml.template > /config/cloudflared/config.yml
           echo ">> [infra-init] ✓ Đã sinh cloudflared/config.yml"
         fi
-        # 2. Tự động khởi tạo ops-control.json nếu chưa có
-        DASH_DIR="/config/observability/grafana/provisioning/dashboards/admin"
-        if [ -f "$$DASH_DIR/ops-control.json.example" ] && [ ! -f "$$DASH_DIR/ops-control.json" ]; then
-          cp "$$DASH_DIR/ops-control.json.example" "$$DASH_DIR/ops-control.json"
-          echo ">> [infra-init] ✓ Đã tạo ops-control.json"
-        fi
-        # 3. Đảm bảo các thư mục và file token cần thiết tồn tại
+        # 2. Đảm bảo các thư mục và file token cần thiết tồn tại
         mkdir -p /config/kafka/tls
         touch /config/consul/consul-tokens.env
         touch /config/vault/vault-tokens.env
+        # 3. Sinh ops-control.json với real secrets (static secrets từ env vars)
+        #    Consul/Vault tokens sẽ được điền lại bởi consul-config-loader sau khi init
+        if [ -f /config/scripts/generate-ops-dashboard.sh ]; then
+          sh /config/scripts/generate-ops-dashboard.sh
+        else
+          DASH_DIR="/config/observability/grafana/provisioning/dashboards/admin"
+          if [ -f "$$DASH_DIR/ops-control.json.example" ] && [ ! -f "$$DASH_DIR/ops-control.json" ]; then
+            cp "$$DASH_DIR/ops-control.json.example" "$$DASH_DIR/ops-control.json"
+            echo ">> [infra-init] ✓ Đã tạo ops-control.json (fallback copy)"
+          fi
+        fi
         echo ">> [infra-init] ✓ Hoàn tất chuẩn bị cấu hình!"
 
   kafka:
@@ -196,6 +206,7 @@ services:
       - ./central-server-config/consul/consul-loader.sh:/upload-consul-file.sh:ro
       - ./central-server-config/consul/consul-loader.sh:/consul-loader.sh:ro
       - ./central-server-config/consul:/consul-config:rw
+      - ./central-server-config:/central-config:rw
     environment:
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - INIT_SLEEP_SECONDS=5
@@ -203,6 +214,12 @@ services:
       - CONSUL_PORT=8500
       - CONSUL_MASTER_TOKEN=${CONSUL_MASTER_TOKEN:-${APP_F4_PASS}}
       - APP_F4_PASS=${APP_F4_PASS}
+      - DOMAIN=${DOMAIN:-yourdomain.com}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - S2S_CLIENT_SECRET=${S2S_CLIENT_SECRET:-}
+      - REPOSILITE_TOKEN=${REPOSILITE_TOKEN:-}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-}
+      - CF_API_TOKEN=${CF_API_TOKEN:-}
     command:
       - /bin/bash
       - -c
@@ -217,6 +234,11 @@ services:
         fi
         if [ -f "$$OUTPUT_TOKEN_FILE" ]; then
           set -a; source "$$OUTPUT_TOKEN_FILE" 2>/dev/null || true; set +a
+        fi
+        # Sau khi có Consul tokens → tái sinh ops-control.json với đầy đủ secrets
+        if [ -f /central-config/scripts/generate-ops-dashboard.sh ]; then
+          echo ">> [consul-config-loader] Đang cập nhật ops-control.json với Consul/Vault tokens..."
+          CONFIG_MOUNT=/central-config sh /central-config/scripts/generate-ops-dashboard.sh || true
         fi
         export CONSUL_HTTP_TOKEN="$${CONSUL_TOKEN_CONFIG_DEPLOYER:-$$CONSUL_MASTER_TOKEN}"
         exec /load-config.sh
