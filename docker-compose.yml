@@ -62,10 +62,7 @@ services:
               /tmp/kraft-config.properties.template > /tmp/kraft-config.properties
         fi
         # Tự động sinh SSL Keystore & Truststore nếu chưa tồn tại
-        if [ ! -f /etc/kafka/secrets/kafka.broker.keystore.jks ]; then
-          echo ">> [kafka-ssl] Keystore chưa tồn tại. Đang tự động sinh Kafka SSL certificates..."
-          OUTPUT_DIR=/etc/kafka/secrets /bin/bash /opt/kafka/scripts/generate-kafka-ssl.sh
-        fi
+        OUTPUT_DIR=/etc/kafka/secrets /bin/bash /opt/kafka/scripts/kafka-init.sh --ssl
         # Format KRaft storage (only if not already formatted)
         export CLUSTER_ID=$${CLUSTER_ID:-kafka-cluster-01}
         if [ ! -f /var/lib/kafka/data/meta.properties ]; then
@@ -74,8 +71,8 @@ services:
         # Start Kafka and initialize ACLs
         bin/kafka-server-start.sh /tmp/kraft-config.properties &
         KAFKA_PID=$$!
-        if [ -f /opt/kafka/scripts/init-kafka-acls.sh ]; then
-          /bin/bash /opt/kafka/scripts/init-kafka-acls.sh &
+        if [ -f /opt/kafka/scripts/kafka-init.sh ]; then
+          /bin/bash /opt/kafka/scripts/kafka-init.sh --acls &
         fi
         wait $$KAFKA_PID
     ports:
@@ -106,8 +103,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       # Mount KRaft configuration template & scripts
       - ./central-server-config/kafka/kraft-config.properties.template:/tmp/kraft-config.properties.template:ro
-      - ./central-server-config/kafka/init-kafka-acls.sh:/opt/kafka/scripts/init-kafka-acls.sh:ro
-      - ./central-server-config/kafka/generate-kafka-ssl.sh:/opt/kafka/scripts/generate-kafka-ssl.sh:ro
+      - ./central-server-config/kafka/kafka-init.sh:/opt/kafka/scripts/kafka-init.sh:ro
       # SSL certificates directory
       - ./central-server-config/kafka/tls:/etc/kafka/secrets:rw
       # CA certificates for remote Keycloak
@@ -197,8 +193,8 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/consul/KV:/config
-      - ./central-server-config/consul/upload-consul-file-with-token.sh:/upload-consul-file.sh:ro
-      - ./central-server-config/consul/init-consul-acl.sh:/init-consul-acl.sh:ro
+      - ./central-server-config/consul/consul-loader.sh:/upload-consul-file.sh:ro
+      - ./central-server-config/consul/consul-loader.sh:/consul-loader.sh:ro
       - ./central-server-config/consul:/consul-config:rw
     environment:
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
@@ -215,9 +211,9 @@ services:
         export CONSUL_MASTER_TOKEN="$${CONSUL_MASTER_TOKEN:-$${APP_F4_PASS}}"
         export OUTPUT_TOKEN_FILE="/consul-config/consul-tokens.env"
         export POLICIES_DIR="/consul-config/policies"
-        if [ -f /init-consul-acl.sh ]; then
+        if [ -f /consul-loader.sh ]; then
           echo ">> [consul-config-loader] Tự động khởi tạo Consul ACL Policies & Tokens..."
-          /bin/bash /init-consul-acl.sh || true
+          /bin/bash /consul-loader.sh --init || true
         fi
         if [ -f "$$OUTPUT_TOKEN_FILE" ]; then
           set -a; source "$$OUTPUT_TOKEN_FILE" 2>/dev/null || true; set +a
