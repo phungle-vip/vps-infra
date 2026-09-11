@@ -254,7 +254,16 @@ services:
         # Sau khi có Consul tokens → tái sinh ops-control.json với đầy đủ secrets
         if [ -f /central-config/scripts/generate-ops-dashboard.sh ]; then
           echo ">> [consul-config-loader] Đang cập nhật ops-control.json với Consul/Vault tokens..."
-          CONFIG_MOUNT=/central-config sh /central-config/scripts/generate-ops-dashboard.sh || true
+          CONFIG_MOUNT=/central-config GRAFANA_URL=http://grafana:3000 sh /central-config/scripts/generate-ops-dashboard.sh || true
+          (
+            for i in $$(seq 1 30); do
+              if curl -s -f -m 2 http://grafana:3000/api/health >/dev/null 2>&1; then
+                CONFIG_MOUNT=/central-config GRAFANA_URL=http://grafana:3000 sh /central-config/scripts/generate-ops-dashboard.sh || true
+                break
+              fi
+              sleep 2
+            done
+          ) &
         fi
         export CONSUL_HTTP_TOKEN="$${CONSUL_TOKEN_CONFIG_DEPLOYER:?CONSUL_TOKEN_CONFIG_DEPLOYER is required}"
         exec /load-config.sh
