@@ -392,18 +392,23 @@ services:
       - GF_HELP_ENABLED=false
       - GF_NEWS_NEWS_FEED_ENABLED=false
       - GF_PLUGINS_PLUGIN_ADMIN_ENABLED=false
+      # Database Connection Pooling & Performance
+      - GF_DATABASE_MAX_OPEN_CONN=50
+      - GF_DATABASE_MAX_IDLE_CONN=10
+      - GF_DATABASE_CONN_MAX_LIFETIME=14400
       # Keycloak Generic OAuth Configuration (Zero Trust OIDC)
       - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
       - GF_AUTH_GENERIC_OAUTH_ENABLED=true
       - GF_AUTH_GENERIC_OAUTH_NAME=Keycloak
       - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana
       - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET:-0TnpRknqjQYngbnbRW7hKECA8TbR4D7V}
-      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email roles
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email roles offline_access
       - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/auth
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/token
       - GF_AUTH_GENERIC_OAUTH_API_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/userinfo
       - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
-      - GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP=true
+      - GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN=true
+      - GF_AUTH_TOKEN_ROTATION_ENABLED=true
       - GF_AUTH_GENERIC_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP=true
       - GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH=preferred_username
       - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(roles[*], 'ROLE_ADMIN') && 'Admin' || contains(resource_access.grafana.roles[*], 'grafana-admin') && 'Admin' || contains(realm_access.roles[*], 'ROLE_ADMIN') && 'Admin' || contains(roles[*], 'ROLE_DEV') && 'Editor' || contains(realm_access.roles[*], 'ROLE_DEV') && 'Editor' || contains(roles[*], 'ROLE_MANAGER') && 'Editor' || contains(resource_access.grafana.roles[*], 'grafana-viewer') && 'Viewer' || contains(roles[*], 'grafana-viewer') && 'Viewer' || 'Viewer'
