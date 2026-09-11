@@ -401,7 +401,7 @@ services:
       - GF_AUTH_GENERIC_OAUTH_ENABLED=true
       - GF_AUTH_GENERIC_OAUTH_NAME=Keycloak
       - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana
-      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET:-0TnpRknqjQYngbnbRW7hKECA8TbR4D7V}
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET}
       - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email roles offline_access
       - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/auth
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/token
