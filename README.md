@@ -117,15 +117,15 @@ infra/vps-infra/
 
 | Dịch vụ | Domain Public | Cổng nội bộ | Xác thực bảo vệ |
 | :--- | :--- | :--- | :--- |
-| **Keycloak Admin** | `https://keycloak.phungvip.io.vn` | `keycloak:9080` | Public (Login bằng Keycloak Admin) |
-| **Kafka UI** | `https://kafdrop.phungvip.io.vn` | `kafka-ui:8080` | Cloudflare Access -> Keycloak OIDC |
-| **Consul UI** | `https://consul.phungvip.io.vn` | `consul:8500` | Cloudflare Access -> Keycloak OIDC |
-| **RedisInsight** | `https://redisinsight.phungvip.io.vn` | `redisinsight:5540` | Cloudflare Access -> Keycloak OIDC |
-| **HashiCorp Vault** | `https://vault.phungvip.io.vn` | `vault:8200` | Cloudflare Access -> Keycloak OIDC |
-| **Grafana Monitoring**| `https://grafana.phungvip.io.vn` | `grafana:3000` | Cloudflare Access -> Keycloak OIDC |
-| **API Gateway** | `https://gateway.phungvip.io.vn` | `gateway:8080` | Public (Spring Cloud Gateway) |
-| **Kafka External SSL**| `phungvip.io.vn:9094` | `kafka:9092` | SSL Keystore / Mutual TLS |
-| **Kafka OAuth SASL** | `phungvip.io.vn:9093` | `kafka:9093` | SASL_SSL với Keycloak JWT |
+| **Keycloak Admin** | `https://keycloak.<DOMAIN>` | `keycloak:9080` | Public (Login bằng Keycloak Admin) |
+| **Kafka UI** | `https://kafdrop.<DOMAIN>` | `kafka-ui:8080` | Cloudflare Access -> Keycloak OIDC |
+| **Consul UI** | `https://consul.<DOMAIN>` | `consul:8500` | Cloudflare Access -> Keycloak OIDC |
+| **RedisInsight** | `https://redisinsight.<DOMAIN>` | `redisinsight:5540` | Cloudflare Access -> Keycloak OIDC |
+| **HashiCorp Vault** | `https://vault.<DOMAIN>` | `vault:8200` | Cloudflare Access -> Keycloak OIDC |
+| **Grafana Monitoring**| `https://grafana.<DOMAIN>` | `grafana:3000` | Cloudflare Access -> Keycloak OIDC |
+| **API Gateway** | `https://gateway.<DOMAIN>` | `gateway:8080` | Public (Spring Cloud Gateway) |
+| **Kafka External SSL**| `<DOMAIN>:9094` | `kafka:9092` | SSL Keystore / Mutual TLS |
+| **Kafka OAuth SASL** | `<DOMAIN>:9093` | `kafka:9093` | SASL_SSL với Keycloak JWT |
 | **Redis Server** | `127.0.0.1:6379` | `redis:6379` | Mật khẩu `APP_F4_PASS` (Localhost only) |
 | **Elasticsearch** | `127.0.0.1:9200` | `elasticsearch:9200`| Localhost only |
 
