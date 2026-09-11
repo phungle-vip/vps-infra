@@ -95,7 +95,7 @@ docker compose ps
 
 Khi vừa chạy `docker compose up -d` lần đầu tiên, tên miền Cloudflare Tunnel (`grafana.<DOMAIN>`) chưa được thiết lập kết nối ra Internet. Bạn có thể truy cập vào Grafana ngay bằng **1 trong 2 cách sau**:
 
-### 🔹 Cách A: Dùng SSH Tunneling từ máy tính cá nhân (Khuyên dùng - Nhanh & Bảo mật 100%)
+### 🔹 Cách 1: Truy cập nội bộ qua SSH Tunneling (Nhanh nhất - Không cần Domain trước)
 Grafana đã được mở sẵn cổng nội bộ an toàn `127.0.0.1:3000` trên VPS (không mở bừa bãi ra WAN). Trên laptop của bạn, mở terminal gõ:
 ```bash
 ssh -L 3000:localhost:3000 root@<IP_CỦA_VPS>
@@ -112,14 +112,63 @@ http://localhost:3000
 
 ---
 
-### 🔹 Cách B: Chạy script kết nối Cloudflare ngay từ CLI VPS
-Nếu bạn đã điền `CF_API_TOKEN` vào file `.env`, bạn chỉ cần chạy 1 lệnh duy nhất trên VPS để thiết lập toàn bộ Domain & SSL Cloudflare:
+### 🔹 Cách 2: Thiết lập Cloudflare Tunnel & Domain từ CLI VPS (Đầy đủ HTTPS & Zero Trust ra Internet)
+Nếu bạn muốn hệ thống có ngay tên miền công khai `https://grafana.<DOMAIN>`, chứng chỉ SSL Cloudflare và lớp bảo vệ Zero Trust ngay từ đầu, hãy làm theo quy trình 5 bước đơn giản sau:
+
+#### Bước 1: Cài đặt Cloudflared CLI & Đăng nhập tài khoản Cloudflare
+Trên máy chủ VPS:
 ```bash
-./central-server-config/scripts/setup-cloudflare.sh --all
+# Cài đặt cloudflared (nếu VPS Ubuntu/Debian chưa có)
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /etc/apt/trusted.gpg.d/cloudflare.gpg >/dev/null
+echo 'deb [signed-by=/etc/apt/trusted.gpg.d/cloudflare.gpg] https://pkg.cloudflare.com/cloudflared jammy main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt-get update && sudo apt-get install -y cloudflared
+
+# Đăng nhập tài khoản Cloudflare (lệnh này sẽ hiển thị link xác thực tên miền):
+cloudflared tunnel login
 ```
-Sau khi lệnh chạy xong (khoảng 30 giây), bạn có thể truy cập thẳng từ Internet:
-* URL: `https://grafana.<DOMAIN>`
-* Đăng nhập 1-click qua nút **Sign in with Keycloak** bằng tài khoản `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`.
+*(Mở đường link được hiển thị trên trình duyệt và chọn tên miền của bạn để cấp quyền).*
+
+#### Bước 2: Tạo Tunnel mới & nạp `TUNNEL_TOKEN` vào file `.env`
+```bash
+# 1. Tạo tunnel mới (ví dụ đặt tên: ridehub-tunnel)
+cloudflared tunnel create ridehub-tunnel
+
+# 2. Lấy TUNNEL_TOKEN nạp tự động vào file .env:
+echo "TUNNEL_TOKEN=$(cloudflared tunnel token ridehub-tunnel)" >> .env
+```
+
+#### Bước 3: Định tuyến DNS trên Cloudflare trỏ về Tunnel
+Chạy 3 lệnh sau để định tuyến toàn bộ traffic web và SSH về VPS thông qua Tunnel:
+```bash
+# Thay yourdomain.com bằng tên miền của bạn:
+cloudflared tunnel route dns ridehub-tunnel "*.<DOMAIN>"
+cloudflared tunnel route dns ridehub-tunnel "<DOMAIN>"
+cloudflared tunnel route dns ridehub-tunnel "ssh.<DOMAIN>"
+```
+
+#### Bước 4: Tạo `CF_API_TOKEN` & Chạy kịch bản tự động hóa Zero Trust
+1. Trên Cloudflare Dashboard, vào **My Profile -> API Tokens -> Create Token (Custom Token)**, cấp các quyền sau:
+   - `Account` -> `Access: Apps and Policies` -> `Edit`
+   - `Account` -> `Access: Organizations, Identity Providers, and Groups` -> `Edit`
+2. Mở file `.env` và điền giá trị token vừa tạo vào dòng:
+   ```env
+   CF_API_TOKEN=your_cloudflare_api_token
+   ```
+3. Chạy script thiết lập bảo mật:
+   ```bash
+   ./central-server-config/scripts/setup-cloudflare.sh --all
+   ```
+   *Script này sẽ tự động: kết nối Keycloak OIDC làm IdP, tạo Access Application bảo vệ 5 Web UI quản trị (Kafka UI, Consul, Vault, Grafana, Redis), và cấu hình SSH Certificate Authority.*
+
+#### Bước 5: Khởi động container `cloudflared` & Truy cập hệ thống
+```bash
+# Khởi động lại container cloudflared để nhận TUNNEL_TOKEN mới:
+docker compose restart cloudflared
+```
+Đợi khoảng 15–30 giây để DNS phân giải trên toàn cầu:
+* **Mở trình duyệt truy cập:** `https://grafana.<DOMAIN>`
+* Nhấn nút **"Sign in with Keycloak"** để đăng nhập SSO 1-click bằng tài khoản `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` (hoặc tài khoản trong Keycloak Realm).
+* Tất cả các dịch vụ khác (`https://keycloak.<DOMAIN>`, `https://kafdrop.<DOMAIN>`, `https://consul.<DOMAIN>`) lúc này cũng đã sẵn sàng hoạt động với HTTPS chuẩn Cloudflare!
 
 ---
 
