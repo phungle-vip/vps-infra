@@ -19,6 +19,14 @@ services:
         # Set log directory to writable location
         export LOG_DIR=/tmp/kafka-logs
         mkdir -p $$LOG_DIR
+        # Tự động render kraft-config.properties từ template nếu có
+        if [ -f /tmp/kraft-config.properties.template ]; then
+          echo ">> [kafka-init] Tự động render kraft-config.properties từ template theo DOMAIN=$${DOMAIN:-phungvip.io.vn}..."
+          sed -e "s|\$${DOMAIN}|$${DOMAIN:-phungvip.io.vn}|g" \
+              -e "s|\$${S2S_CLIENT_ID}|$${S2S_CLIENT_ID}|g" \
+              -e "s|\$${S2S_CLIENT_SECRET}|$${S2S_CLIENT_SECRET}|g" \
+              /tmp/kraft-config.properties.template > /tmp/kraft-config.properties
+        fi
         # Format KRaft storage (only if not already formatted)
         export CLUSTER_ID=$${CLUSTER_ID:-kafka-cluster-01}
         if [ ! -f /var/lib/kafka/data/meta.properties ]; then
@@ -48,6 +56,7 @@ services:
       APP_F4_PASS: ${APP_F4_PASS}
       S2S_CLIENT_ID: ${S2S_CLIENT_ID}
       S2S_CLIENT_SECRET: ${S2S_CLIENT_SECRET}
+      DOMAIN: ${DOMAIN:-phungvip.io.vn}
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
       # Vault integration
       VAULT_ADDR: http://vault:8200
@@ -56,8 +65,9 @@ services:
       SPRING_CLOUD_VAULT_TOKEN: root
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      # Mount KRaft configuration file
-      - ./central-server-config/kafka/kraft-config.properties:/tmp/kraft-config.properties:ro
+      # Mount KRaft configuration file & template
+      - ./central-server-config/kafka/kraft-config.properties.template:/tmp/kraft-config.properties.template:ro
+      - ./central-server-config/kafka/kraft-config.properties:/tmp/kraft-config.properties
       - ./central-server-config/kafka/init-kafka-acls.sh:/opt/kafka/scripts/init-kafka-acls.sh:ro
       # SSL certificates (used for all listeners)
       - ./central-server-config/kafka/tls/kafka.broker.keystore.jks:/etc/kafka/secrets/kafka.broker.keystore.jks:ro
@@ -202,6 +212,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.1.1
     restart: unless-stopped
+    entrypoint: ["/opt/keycloak/keycloak-entrypoint.sh"]
     command:
       - "start-dev"
       - "--import-realm"
@@ -211,7 +222,8 @@ services:
       - "--hostname-strict=true"
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - ./central-server-config/keycloak/jhipster-realm.json:/opt/keycloak/data/import/jhipster-realm.json:ro
+      - ./central-server-config/keycloak/jhipster-realm.json.template:/opt/keycloak/templates/jhipster-realm.json.template:ro
+      - ./central-server-config/keycloak/keycloak-entrypoint.sh:/opt/keycloak/keycloak-entrypoint.sh:ro
       - ./central-server-config/keycloak/keycloak-health-check.sh:/opt/keycloak/health-check.sh
       # - ./central-server-config/keycloak/keycloak-custom-reg/lib:/opt/keycloak/providers
     environment:
@@ -219,6 +231,10 @@ services:
       - KC_DB=dev-file
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+      - DOMAIN=${DOMAIN}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      - S2S_CLIENT_SECRET=${S2S_CLIENT_SECRET}
+      - CF_TEAM_NAME=${CF_TEAM_NAME:-appf4}
       - KC_FEATURES=scripts
       - KC_HTTP_PORT=9080
       - KC_HTTPS_PORT=9443
