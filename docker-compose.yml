@@ -403,6 +403,7 @@ services:
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/token
       - GF_AUTH_GENERIC_OAUTH_API_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/userinfo
       - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
+      - GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP=true
       - GF_AUTH_GENERIC_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP=true
       - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(realm_access.roles[*], 'ROLE_ADMIN') && 'Admin' || contains(resource_access.grafana.roles[*], 'grafana-admin') && 'Admin' || contains(roles[*], 'ROLE_ADMIN') && 'Admin' || contains(realm_access.roles[*], 'ROLE_DEV') && 'Editor' || contains(roles[*], 'ROLE_DEV') && 'Editor' || contains(realm_access.roles[*], 'ROLE_MANAGER') && 'Editor' || contains(resource_access.grafana.roles[*], 'grafana-viewer') && 'Viewer' || contains(roles[*], 'grafana-viewer') && 'Viewer' || 'Viewer'
       - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT=false
