@@ -50,11 +50,11 @@ Các biến này **chưa cần điền ngay** khi start Docker lần đầu, nh�
 
 | Tên biến | Trạng thái trong `.env.example` | Script sử dụng | Hướng dẫn cấu hình khi cần |
 |---|:---:|:---:|---|
-| **`CF_API_TOKEN`** | `your_cloudflare_api_token` (placeholder) | `setup-cloudflare.sh` | **Cần tạo trên Cloudflare**: Vào *Cloudflare Dashboard -> My Profile -> API Tokens -> Create Token*, cấp các quyền:<br>• `Account -> Access: Apps and Policies -> Edit`<br>• `Account -> Access: Organizations, Identity Providers, and Groups -> Edit`. |
-| **`CF_ACCOUNT_ID`** | `your_cloudflare_account_id` (placeholder) | `setup-cloudflare.sh` | Lấy từ trang quản trị Cloudflare (mục Overview của Domain hoặc Zero Trust Dashboard). *Nếu đã có `TUNNEL_TOKEN` hoặc `credentials.json`, script sẽ tự động nhận diện.* |
-| **`TUNNEL_TOKEN`** | Trống (`TUNNEL_TOKEN=`) | `cloudflared` | Lấy sau khi chạy lệnh `cloudflared tunnel create <name>`. Dùng để container `cloudflared` kết nối vào mạng Cloudflare Edge. |
-| **`ADMIN_EMAIL`** | *Chưa có trong file mẫu* | `setup-cloudflare.sh` | Email của bạn (ví dụ: `admin@phungvip.io.vn`). Dùng để gán quyền SSH Zero Trust truy cập VPS. Mặc định nếu không điền sẽ lấy `phungvip@${DOMAIN}`. |
-| **`SSH_SUBDOMAIN`** | *Chưa có trong file mẫu* | `setup-cloudflare.sh` | Subdomain cho kết nối SSH (mặc định: `ssh` -> `ssh.<DOMAIN>`). |
+| **`CF_API_TOKEN`** | `your_cloudflare_api_token` (placeholder) | `Terraform / Orchestration` | **Cần tạo trên Cloudflare**: Vào *Cloudflare Dashboard -> My Profile -> API Tokens -> Create Token*, cấp quyền Account Access & DNS. Dùng cho Terraform và Cloudflared. |
+| **`CF_ACCOUNT_ID`** | `your_cloudflare_account_id` (placeholder) | `Terraform / Orchestration` | Lấy từ trang quản trị Cloudflare (mục Overview của Domain hoặc Zero Trust Dashboard). |
+| **`TUNNEL_TOKEN`** | Trống (`TUNNEL_TOKEN=`) | `cloudflared` | Token của Cloudflare Tunnel kết nối container vào mạng Cloudflare Edge (sinh tự động qua Terraform). |
+| **`ADMIN_EMAIL`** | *Chưa có trong file mẫu* | `Zero Trust Policy` | Email của bạn (ví dụ: `admin@phungvip.io.vn`). Dùng để gán quyền SSH Zero Trust truy cập VPS. Mặc định nếu không điền sẽ lấy `phungvip@${DOMAIN}`. |
+| **`SSH_SUBDOMAIN`** | *Chưa có trong file mẫu* | `Zero Trust SSH` | Subdomain cho kết nối SSH (mặc định: `ssh` -> `ssh.<DOMAIN>`). |
 | **`REMOTE`** | *Chưa có trong file mẫu* | `backup-vps.sh` | Đường dẫn Google Drive trong `rclone` (ví dụ: `ggdrive:vps-backup`). Cần chạy `rclone config` trên host trước khi dùng script backup. |
 
 ---
@@ -147,18 +147,8 @@ cloudflared tunnel route dns ridehub-tunnel "ssh.<DOMAIN>"
 ```
 
 #### Bước 4: Tạo `CF_API_TOKEN` & Chạy kịch bản tự động hóa Zero Trust
-1. Trên Cloudflare Dashboard, vào **My Profile -> API Tokens -> Create Token (Custom Token)**, cấp các quyền sau:
-   - `Account` -> `Access: Apps and Policies` -> `Edit`
-   - `Account` -> `Access: Organizations, Identity Providers, and Groups` -> `Edit`
-2. Mở file `.env` và điền giá trị token vừa tạo vào dòng:
-   ```env
-   CF_API_TOKEN=your_cloudflare_api_token
-   ```
-3. Chạy script thiết lập bảo mật:
-   ```bash
-   ./central-server-config/scripts/setup-cloudflare.sh --all
-   ```
-   *Script này sẽ tự động: kết nối Keycloak OIDC làm IdP, tạo Access Application bảo vệ 5 Web UI quản trị (Kafka UI, Consul, Vault, Grafana, Redis), và cấu hình SSH Certificate Authority.*
+#### Bước 4: Tự động hóa Cloudflare Zero Trust qua Terraform
+Cấu hình Cloudflare (Access Applications, Tunnels, Policies, DNS) được **tự động hóa 100% bằng Terraform** tại `infra/orchestration/terraform`. Bạn không cần chạy script thủ công. Khi triển khai cụm VPS qua Terraform/Ansible, toàn bộ 5 Web UI và kết nối SSH Zero Trust được khởi tạo tự động.
 
 #### Bước 5: Khởi động container `cloudflared` & Truy cập hệ thống
 ```bash
@@ -194,20 +184,7 @@ Bạn có thể quản lý và kích hoạt các script này theo **2 cách**:
 
 ### Cách 2: Chạy trực tiếp qua dòng lệnh CLI trên VPS
 
-#### A. Thiết lập Cloudflare Zero Trust (Bảo vệ Web UI & SSH):
-Yêu cầu đã điền `CF_API_TOKEN` vào `.env`:
-```bash
-# Cấu hình toàn bộ: Keycloak IdP, Web Apps, SSH & WARP
-./central-server-config/scripts/setup-cloudflare.sh --all
-
-# Chỉ cấu hình bảo vệ 5 trang Web quản trị (Kafka UI, Consul, Vault, Grafana, Redis)
-./central-server-config/scripts/setup-cloudflare.sh --apps
-
-# Chỉ cấu hình SSH Zero Trust & WARP Device Enrollment
-./central-server-config/scripts/setup-cloudflare.sh --ssh
-```
-
-#### B. Sao lưu dữ liệu VPS lên Google Drive:
+#### A. Sao lưu dữ liệu VPS lên Google Drive:
 Yêu cầu máy chủ đã cài và đăng nhập `rclone`:
 ```bash
 ./central-server-config/scripts/backup-vps.sh

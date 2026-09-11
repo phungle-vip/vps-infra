@@ -44,7 +44,6 @@ infra/vps-infra/
 │
 └── central-server-config/                     # Toàn bộ cấu hình & scripts runtime của hạ tầng
     ├── scripts/                               # [VẬN HÀNH SAU NÀY] Thư mục do Grafana Admin quản lý
-    │   ├── setup-cloudflare.sh                # Thiết lập Keycloak OIDC, Web Apps, SSH & WARP
     │   ├── backup-vps.sh                      # Sao lưu Docker volumes & code lên Google Drive
     │   ├── renew-kafka-ssl.sh                 # Tái cấp chứng chỉ SSL Kafka khi đổi Domain
     │   ├── reload-consul-kv.sh                # Đồng bộ lại toàn bộ cấu hình KV lên Consul
@@ -109,7 +108,7 @@ infra/vps-infra/
 3. **Quản trị & Thực thi Script tác vụ qua Grafana Admin**:
    - Truy cập Grafana tại `https://grafana.<DOMAIN>`.
    - Vào Dashboard: **"Trạm Điều Khiển Webhook & Tác Vụ Ops"** (`/d/ops-control`).
-   - Kéo xuống mục **🛠️ Quản Trị Kịch Bản Vận Hành Hạ Tầng** để kích hoạt hoặc copy lệnh CLI cho các script (`setup-cloudflare.sh`, `backup-vps.sh`, `renew-kafka-ssl.sh`, `reload-consul-kv.sh`) với các tham số mong muốn.
+   - Kéo xuống mục **🛠️ Quản Trị Kịch Bản Vận Hành Hạ Tầng** để kích hoạt hoặc copy lệnh CLI cho các script (`backup-vps.sh`, `renew-kafka-ssl.sh`, `reload-consul-kv.sh`) với các tham số mong muốn.
 
 ---
 
