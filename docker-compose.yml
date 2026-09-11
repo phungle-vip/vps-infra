@@ -32,10 +32,10 @@ services:
         fi
         wait $$KAFKA_PID
     ports:
-      # - "127.0.0.1:9094:9092" # External SSL (moved from 9092) - localhost only
-      # - "127.0.0.1:9093:9093" # OAuth SASL_SSL - localhost only
-      - "9094:9092" # External SSL (moved from 9092)
-      - "9093:9093" # OAuth SASL_SSL
+      - "127.0.0.1:9094:9092" # External SSL - localhost only
+      - "172.17.0.1:9094:9092" # External SSL - docker0 gateway for microservices
+      - "127.0.0.1:9093:9093" # OAuth SASL_SSL - localhost only
+      - "172.17.0.1:9093:9093" # OAuth SASL_SSL - docker0 gateway for microservices
 
     environment:
       # Cluster ID for KRaft
@@ -114,8 +114,8 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "8500:8500"
+    expose:
+      - "8500"
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
     env_file:
@@ -165,7 +165,8 @@ services:
     image: redis:7.4.2
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+      - "172.17.0.1:6379:6379"  # docker0 gateway for host.docker.internal without exposing to public WAN
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
     volumes:
@@ -305,8 +306,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/tmp/loki
-    ports:
-      - "3100:3100"
+    expose:
+      - "3100"
     labels:
       autoheal: "true"
 
@@ -341,8 +342,8 @@ services:
       - "--storage.tsdb.retention.time=15d"
       - "--web.enable-remote-write-receiver"
       - "--web.enable-lifecycle"
-    ports:
-      - "9090:9090"
+    expose:
+      - "9090"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./central-server-config/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -391,9 +392,28 @@ services:
       - GF_HELP_ENABLED=false
       - GF_NEWS_NEWS_FEED_ENABLED=false
       - GF_PLUGINS_PLUGIN_ADMIN_ENABLED=false
+      # Keycloak Generic OAuth Configuration (Zero Trust OIDC)
+      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=true
+      - GF_AUTH_GENERIC_OAUTH_NAME=Keycloak
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET:-0TnpRknqjQYngbnbRW7hKECA8TbR4D7V}
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email roles
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/auth
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/token
+      - GF_AUTH_GENERIC_OAUTH_API_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/userinfo
+      - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP=true
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(realm_access.roles[*], 'ROLE_ADMIN') && 'Admin' || contains(resource_access.grafana.roles[*], 'grafana-admin') && 'Admin' || contains(roles[*], 'ROLE_ADMIN') && 'Admin' || contains(realm_access.roles[*], 'ROLE_DEV') && 'Editor' || contains(roles[*], 'ROLE_DEV') && 'Editor' || contains(realm_access.roles[*], 'ROLE_MANAGER') && 'Editor' || contains(resource_access.grafana.roles[*], 'grafana-viewer') && 'Viewer' || contains(roles[*], 'grafana-viewer') && 'Viewer' || 'Viewer'
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT=false
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN=true
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+      - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_SIGNOUT_REDIRECT_URL=https://appf4.cloudflareaccess.com/cdn-cgi/access/logout
 
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - grafana_data:/var/lib/grafana
@@ -427,8 +447,8 @@ services:
       - ES_JAVA_OPTS=-Xms512m -Xmx512m -Duser.timezone=Asia/Ho_Chi_Minh
       - discovery.type=single-node
       - xpack.security.enabled=false
-    ports:
-      - "9200:9200"
+    expose:
+      - "9200"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - elasticsearch_data:/usr/share/elasticsearch/data
@@ -452,7 +472,7 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
     ports:
-      - "1080:1080"
+      - "127.0.0.1:1080:1080"
     labels:
       autoheal: "true"
 
