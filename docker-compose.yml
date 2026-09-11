@@ -492,11 +492,13 @@ services:
       - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT=false
       - GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN=false
       - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
-      - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
-      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
       - GF_AUTH_SIGNOUT_REDIRECT_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=https%3A%2F%2Fgrafana.${DOMAIN}%2Flogin
       - GF_AUTH_GENERIC_OAUTH_SIGNOUT_REDIRECT_URL=https://keycloak.${DOMAIN}/realms/jhipster/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=https%3A%2F%2Fgrafana.${DOMAIN}%2Flogin
 
+    ports:
+      - "127.0.0.1:3000:3000"
     expose:
       - "3000"
     volumes:

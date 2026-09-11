@@ -91,6 +91,38 @@ docker compose ps
 
 ---
 
+## 3.1. Truy cập Grafana lần đầu (Khi chưa có Domain / Cloudflare)
+
+Khi vừa chạy `docker compose up -d` lần đầu tiên, tên miền Cloudflare Tunnel (`grafana.<DOMAIN>`) chưa được thiết lập kết nối ra Internet. Bạn có thể truy cập vào Grafana ngay bằng **1 trong 2 cách sau**:
+
+### 🔹 Cách A: Dùng SSH Tunneling từ máy tính cá nhân (Khuyên dùng - Nhanh & Bảo mật 100%)
+Grafana đã được mở sẵn cổng nội bộ an toàn `127.0.0.1:3000` trên VPS (không mở bừa bãi ra WAN). Trên laptop của bạn, mở terminal gõ:
+```bash
+ssh -L 3000:localhost:3000 root@<IP_CỦA_VPS>
+```
+Sau đó, mở trình duyệt trên laptop truy cập:
+```
+http://localhost:3000
+```
+* **Tài khoản**: `admin`
+* **Mật khẩu**: Mật khẩu master `${APP_F4_PASS}` trong file `.env` của bạn.
+
+> [!TIP]
+> Hệ thống đã bật sẵn chế độ Dual-Login: Cho phép đăng nhập song song bằng mật khẩu local `admin` khi chưa có Domain, và nút `Sign in with Keycloak` (SSO) khi đã kết nối domain thành công!
+
+---
+
+### 🔹 Cách B: Chạy script kết nối Cloudflare ngay từ CLI VPS
+Nếu bạn đã điền `CF_API_TOKEN` vào file `.env`, bạn chỉ cần chạy 1 lệnh duy nhất trên VPS để thiết lập toàn bộ Domain & SSL Cloudflare:
+```bash
+./central-server-config/scripts/setup-cloudflare.sh --all
+```
+Sau khi lệnh chạy xong (khoảng 30 giây), bạn có thể truy cập thẳng từ Internet:
+* URL: `https://grafana.<DOMAIN>`
+* Đăng nhập 1-click qua nút **Sign in with Keycloak** bằng tài khoản `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`.
+
+---
+
 ## 4. Hướng dẫn thực thi các Script sau này
 
 Toàn bộ các script tác vụ sau này được lưu tập trung tại thư mục:
@@ -101,7 +133,7 @@ central-server-config/scripts/
 Bạn có thể quản lý và kích hoạt các script này theo **2 cách**:
 
 ### Cách 1: Thao tác trực tiếp trên Grafana Admin Dashboard (Khuyến nghị)
-1. Đăng nhập vào Grafana: `https://grafana.<DOMAIN>` bằng tài khoản Keycloak Admin.
+1. Đăng nhập vào Grafana (qua `http://localhost:3000` hoặc `https://grafana.<DOMAIN>`).
 2. Mở Dashboard: **"Trạm Điều Khiển Webhook & Tác Vụ Ops"** (`/d/ops-control`).
 3. Kéo xuống mục **🛠️ Quản Trị Kịch Bản Vận Hành Hạ Tầng (Infrastructure Ops Scripts & Docs)**.
 4. Tại đây bạn có thể:
@@ -162,3 +194,4 @@ docker compose restart kafka kafka-ui
   ```
 * **Muốn sinh lại toàn bộ chứng chỉ và file token:**
   Chỉ cần xóa nội dung trong `central-server-config/kafka/tls/*` và chạy `docker compose restart kafka`. Kafka sẽ tự động tạo lại cặp chứng chỉ mới hoàn chỉnh.
+
