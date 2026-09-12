@@ -37,7 +37,7 @@ services:
         echo ">> [infra-init] Tự động chuẩn bị cấu hình hạ tầng..."
         # 1. Tự động sinh cloudflared/config.yml từ template nếu chưa có hoặc cập nhật domain
         if [ -f /config/cloudflared/config.yml.template ]; then
-          sed -e "s|\\\${DOMAIN}|$${DOMAIN:-phungvip.io.vn}|g" \
+          sed "s/\$${DOMAIN}/$${DOMAIN:-phungvip.io.vn}/g" \
               /config/cloudflared/config.yml.template > /config/cloudflared/config.yml
           echo ">> [infra-init] ✓ Đã sinh cloudflared/config.yml"
         fi
@@ -95,9 +95,11 @@ services:
         wait $$KAFKA_PID
     ports:
       - "127.0.0.1:9094:9092" # External SSL - localhost only
-      - "172.17.0.1:9094:9092" # External SSL - docker0 gateway for microservices
+      - "172.17.0.1:9094:9092" # External SSL - docker0 gateway for microservices (mock)
+      - "10.10.0.1:9094:9092" # External SSL - WireGuard L4 network
       - "127.0.0.1:9093:9093" # OAuth SASL_SSL - localhost only
-      - "172.17.0.1:9093:9093" # OAuth SASL_SSL - docker0 gateway for microservices
+      - "172.17.0.1:9093:9093" # OAuth SASL_SSL - docker0 gateway for microservices (mock)
+      - "10.10.0.1:9093:9093" # OAuth SASL_SSL - WireGuard L4 network
 
     environment:
       # Cluster ID for KRaft
@@ -278,7 +280,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
-      - "172.17.0.1:6379:6379"  # docker0 gateway for host.docker.internal without exposing to public WAN
+      - "172.17.0.1:6379:6379"  # docker0 gateway for host.docker.internal without exposing to public WAN (mock)
+      - "10.10.0.1:6379:6379"   # WireGuard L4 network
     environment:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
     volumes:
@@ -636,6 +639,33 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - reposilite_data:/app/data
+    labels:
+      autoheal: "true"
+
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:latest
+    container_name: wg-easy
+    restart: unless-stopped
+    environment:
+      - WG_HOST=${WG_HOST:-10.10.0.1}
+      - PASSWORD_HASH=${WG_PASSWORD_HASH:-}
+      - WG_PORT=51820
+      - WG_DEFAULT_ADDRESS=10.10.0.x
+      - WG_DEFAULT_DNS=1.1.1.1
+      - WG_ALLOWED_IPS=10.10.0.0/24
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./central-server-config/wireguard:/etc/wireguard
+    ports:
+      - "51820:51820/udp"
+    expose:
+      - "51821"
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
     labels:
       autoheal: "true"
 
