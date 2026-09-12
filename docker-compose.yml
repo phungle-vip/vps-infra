@@ -44,7 +44,9 @@ services:
         # 2. Đảm bảo các thư mục và file token cần thiết tồn tại
         mkdir -p /config/kafka/tls
         touch /config/consul/consul-tokens.env
+        chmod 644 /config/consul/consul-tokens.env || true
         touch /config/vault/vault-tokens.env
+        chmod 644 /config/vault/vault-tokens.env || true
         # 3. Sinh ops-control.json với real secrets (static secrets từ env vars)
         #    Consul/Vault tokens sẽ được điền lại bởi consul-config-loader sau khi init
         if [ -f /config/scripts/generate-ops-dashboard.sh ]; then
